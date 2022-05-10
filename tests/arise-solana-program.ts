@@ -14,46 +14,58 @@ describe("arise-solana-program", () => {
   it("Create user data and update email!", async () => {
     const wallet = (program.provider as anchor.AnchorProvider).wallet
 
-    const arbitraryWallet = anchor.web3.Keypair.generate()
+    /**
+      * Create new user data
+      * */
+    const email = 'kevin.janada@gmail.com'
+    const seedPrefix = 'user-data'
 
-    const [userDataPDA, _] = await PublicKey
+    const [userDataPDA, _b] = await PublicKey
       .findProgramAddress(
         [
-          anchor.utils.bytes.utf8.encode("user-data"),
-          provider.wallet.publicKey.toBuffer(),
-          // this would cause
-          // Error: failed to send transaction: Transaction simulation failed:
-          // Error processing Instruction 0:
-          // Cross-program invocation with unauthorized signer or writable account
-          //arbitraryWallet.publicKey.toBuffer(),
+          anchor.utils.bytes.utf8.encode(seedPrefix),
+          anchor.utils.bytes.utf8.encode(email)
         ],
         program.programId
       );
+
     await program.methods
-      .createUserData('kevin.janada@gmail.com')
+      .createUserData(email)
       .accounts({
-        user: wallet.publicKey,
-        // This would cause Error: Signature verification failed
-        // because the first signer in account is wallet. set in Anchor.toml 
-        //user: arbitraryWallet.publicKey,
+        authority: wallet.publicKey,
         userData: userDataPDA,
       })
       .rpc()
 
-    const userDataState = await program.account.userData.fetch(userDataPDA)
+    let userDataState = await program.account.userData.fetch(userDataPDA)
     expect(userDataState.email).to.equal('kevin.janada@gmail.com')
-    expect(userDataState.publicKey.toBase58()).to.equal(wallet.publicKey.toBase58())
+    expect(userDataState.authority.toBase58()).to.equal(wallet.publicKey.toBase58())
 
+    /**
+      * Update user data:
+      * - it deletes the old user data
+      * - creates a new user data
+      * */
+    const newEmail = 'kevinjrardian@gmail.com'
+    const [newUserDataPDA, _c] = await PublicKey
+      .findProgramAddress(
+        [
+          anchor.utils.bytes.utf8.encode(seedPrefix),
+          anchor.utils.bytes.utf8.encode(newEmail)
+        ],
+        program.programId
+      )
     await program.methods
-      .updateUserDataEmail('dennis.darwis@gmail.com')
+      .updateUserData(newEmail)
       .accounts({
-        user: wallet.publicKey,
-        userData: userDataPDA
+        authority: wallet.publicKey,
+        existingUserData: userDataPDA,
+        userData: newUserDataPDA,
       })
       .rpc()
 
-    expect((await program.account.userData.fetch(userDataPDA)).email)
-      .to.equal('dennis.darwis@gmail.com')
-      
+    userDataState = await program.account.userData.fetch(newUserDataPDA)
+    expect(userDataState.email).to.equal(newEmail)
+    expect(userDataState.authority.toBase58()).to.equal(wallet.publicKey.toBase58())
   });
 });

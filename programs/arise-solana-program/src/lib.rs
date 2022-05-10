@@ -1,41 +1,44 @@
 use anchor_lang::prelude::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("8cUdKAzTmeJbrT8xR81Ai5qeHKKWdKfEguA4tpae1EDL");
 
 #[program]
 pub mod arise_solana_program {
     use super::*;
 
     pub fn create_user_data(ctx: Context<CreateUserData>, email: String) -> Result<()> {
-        ctx.accounts.user_data.public_key = ctx.accounts.user.key();
         // TODO: validate email to be 100 
         if email.as_bytes().len() > 100 {
             panic!()
         }
         ctx.accounts.user_data.email = email;
+        ctx.accounts.user_data.authority = ctx.accounts.authority.key();
         ctx.accounts.user_data.bump = *ctx.bumps.get("user_data").unwrap();
         Ok(())
     }
 
-    pub fn update_user_data_email(ctx: Context<UpdateUserDataEmail>, email: String) -> Result<()> {
+    pub fn update_user_data(ctx: Context<UpdateUserData>, email: String) -> Result<()> {
         // TODO: validate email to be 100 
         if email.as_bytes().len() > 100 {
             panic!()
         }
         ctx.accounts.user_data.email = email;
+        ctx.accounts.user_data.authority = ctx.accounts.authority.key();
+        ctx.accounts.user_data.bump = *ctx.bumps.get("user_data").unwrap();
         Ok(())
     }
 }
 
 #[derive(Accounts)]
+#[instruction(email: String)]
 pub struct CreateUserData<'info> {
     #[account(mut)]
-    pub user: Signer<'info>,
+    pub authority: Signer<'info>,
     #[account(
         init,
-        payer = user,
+        payer = authority,
         space = UserData::MAXIMUM_SIZE,
-        seeds = [b"user-data", user.key().as_ref()],
+        seeds = [b"user-data", email.as_bytes()],
         bump
     )]
     pub user_data: Account<'info, UserData>,
@@ -43,21 +46,40 @@ pub struct CreateUserData<'info> {
 }
 
 #[derive(Accounts)]
-pub struct UpdateUserDataEmail<'info> {
-    pub user: Signer<'info>,
+#[instruction(email: String)]
+pub struct UpdateUserData<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
     #[account(
         mut,
-        seeds = [b"user-data", user.key().as_ref()],
-        bump = user_data.bump
+        close = authority,
+        has_one = authority @ Error::CloseUserDataAccount,
+        seeds = [b"user-data", existing_user_data.email.as_bytes()],
+        bump = existing_user_data.bump
     )]
-    pub user_data: Account<'info, UserData>
+    pub existing_user_data: Account<'info, UserData>,
+    #[account(
+        init,
+        payer = authority,
+        space = UserData::MAXIMUM_SIZE,
+        seeds = [b"user-data", email.as_bytes()],
+        bump
+    )]
+    pub user_data: Account<'info, UserData>,
+    pub system_program: Program<'info, System>
+}
+
+#[error_code]
+pub enum Error {
+    #[msg("Unable to close account")]
+    CloseUserDataAccount
 }
 
 #[account]
 #[derive(Default)]
 pub struct UserData {
     email: String,
-    public_key: Pubkey,
+    authority: Pubkey,
     bump: u8,
 }
 
